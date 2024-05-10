@@ -10,7 +10,7 @@ import { Box,
     Collapse } from '@chakra-ui/react';
 import { supabase, storeTokens, createSocketForDriveWebhookChangesFromDB } from './utils/supabase_client';
 import { v4 as uuidv4 } from 'uuid';
-import { MdOutlineFolder, MdOutlineInsertDriveFile, MdChevronRight, MdCheck, MdError, MdClose, MdKeyboardArrowUp, MdKeyboardArrowDown } from 'react-icons/md';
+import { MdOutlineFolder, MdLogout, MdOutlineInsertDriveFile, MdChevronRight, MdCheck, MdError, MdClose, MdKeyboardArrowUp, MdKeyboardArrowDown } from 'react-icons/md';
 import { FcGoogle } from 'react-icons/fc';
 import { callProcessFileAPI } from './utils/process_file_api';
 
@@ -461,7 +461,7 @@ const Home = () => {
             <Flex as="nav" justify="space-between" p={4} bg="blue.50" color="white" align='center'>
                 <Text fontSize="lg" fontWeight="bold" color="blue.500">File Picker and Reader</Text>
                 <Menu>
-                    <MenuButton as={Button} color={'blue.100'}>
+                    <MenuButton as={Button} variant="outline" color={'blue.100'} background='none' _hover={{background:"blue.200"}}>
                         <Flex align="center" gap={2}>
                             <Box boxSize="30px">
                             <Image 
@@ -477,7 +477,7 @@ const Home = () => {
                         </Flex>
                     </MenuButton>
                     <MenuList>
-                        <MenuItem color="black" onClick={async () => await supabase.auth.signOut()}>
+                        <MenuItem color="black" background="white" alignContent='center' onClick={async () => await supabase.auth.signOut()} icon={<MdLogout />}>
                             Sign out
                         </MenuItem>
                     </MenuList>
