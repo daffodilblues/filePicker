@@ -1,11 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Table, Thead, Tbody, Tr, Th, Td, Button, Text, Icon, Flex, Heading, Spinner, Image, Menu, MenuButton, MenuList, MenuItem, Divider } from '@chakra-ui/react';
+import { Box,
+     Table, Thead, Tbody, Tr, Th, Td,
+      Button, Text, Icon, Flex, Heading, 
+      Spinner, Image, Menu, MenuButton, MenuList, MenuItem, Divider, 
+      Modal, ModalOverlay, ModalContent, ModalHeader,
+       ModalBody, ModalCloseButton,
+    useDisclosure,
+    IconButton,
+    Collapse } from '@chakra-ui/react';
 import { supabase, storeTokens, createSocketForDriveWebhookChangesFromDB } from './utils/supabase_client';
 import { v4 as uuidv4 } from 'uuid';
-import { MdOutlineFolder, MdOutlineInsertDriveFile, MdChevronRight, MdCheck } from 'react-icons/md';
+import { MdOutlineFolder, MdOutlineInsertDriveFile, MdChevronRight, MdCheck, MdError, MdClose, MdKeyboardArrowUp, MdKeyboardArrowDown } from 'react-icons/md';
 import { FcGoogle } from 'react-icons/fc';
-import { profile } from 'console';
-// import { initializeGoogleClient, getDriveClient } from './utils/google_drive_client';
+import { callProcessFileAPI } from './utils/process_file_api';
 
 interface GoogleDriveFile {
     id: string;
@@ -21,7 +28,15 @@ interface PathElement {
     id: string;
 }
 
+interface UploadStatus {
+    id: string;
+    name: string;
+    status: 'uploading' | 'success' | 'error';
+}
 
+interface UploadStatuses {
+    [key: string]: { name: string; status: 'uploading' | 'success' | 'error', type: string };
+}
 
 const Home = () => {
     const [files, setFiles] = useState<GoogleDriveFile[]>([]);
@@ -36,7 +51,40 @@ const Home = () => {
     const [changesProcessedIndex, setChangesProcessedIndex] = useState<number>(0);
     const currentPathRef = React.useRef(currentPath);
     const [selectMode, setSelectMode] = useState<boolean>(false);
+    const [uploadStatuses, setUploadStatuses] = useState<UploadStatuses>({});
+    
+    useEffect(() => {
+        localStorage.setItem('currentFolderId', 'root');
+        fetchFiles();
+        registerDriveWebhookAPI();
+        createSocketForDriveWebhookChangesFromDB(handleInserts);
 
+        return () => {
+            localStorage.setItem('startPageToken', '');
+            // unsubscribe(); // Assuming createSocketForDriveWebhookChangesFromDB returns a function to terminate the connection
+            // This function is called on component unmount
+            if (channelId && resourceId) {
+                localStorage.setItem('channelId', '');
+                localStorage.setItem('resourceId', '');
+                stopWebhookChannel(channelId, resourceId);
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        // This effect could be used to handle changes that need to be made when the path changes,
+        // such as fetching new files or updating UI elements.
+        localStorage.setItem('currentFolderId', currentPath[currentPath.length - 1]?.id || 'root');
+
+        currentPathRef.current = currentPath;
+        fetchFiles(currentPath[currentPath.length - 1]?.id || 'root');
+    }, [currentPath]); 
+
+    useEffect(() => {
+        if (!selectMode && selectedFiles.length > 0) {
+            setSelectedFiles([]);
+        }
+    }, [selectMode]);
 
     const registerDriveWebhookAPI = async () => {
         const { data: { session } } = await supabase.auth.getSession();
@@ -46,24 +94,19 @@ const Home = () => {
             let channelId = localStorage.getItem('channelId');
             if (channelId) {
                 setChannelId(channelId);
-                console.log(channelId, "channelId existing");
+                console.log(channelId, "Google drive webhook channelId already exists");
                 return;
             };
             if (!channelId) {
                 channelId = `webhook-channel-${session?.user?.email?.replace(/[^A-Za-z0-9\-_\/=+]/g, '')}-${Date.now()}`;
-                console.log('new channel created', channelId);
                 localStorage.setItem('channelId', channelId); // Store channelId in local storage
                 setChannelId(channelId);
 
             }
 
             const accessToken: any = session.provider_token;
-
-            const userId = session.user.id;
-            //   await storeTokens(accessToken, session.refresh_token, userId);
             const tokenUrl = 'https://www.googleapis.com/drive/v3/changes/startPageToken';
             const webhookUrl = 'https://sfagl7ugp5.execute-api.ap-south-1.amazonaws.com/webhook';
-            //   const driveApiUrl = 'https://www.googleapis.com/drive/v3/changes/watch';
 
             // Fetch the startPageToken
             const tokenResponse = await fetch(tokenUrl, {
@@ -80,9 +123,6 @@ const Home = () => {
             const tokenData = await tokenResponse.json();
             const startPageToken = tokenData.startPageToken;
             const driveApiUrl = `https://www.googleapis.com/drive/v3/changes/watch?pageToken=${startPageToken}`;
-
-            //   const resourceId = `resource-${session.user.email}-${Date.now()}`;
-
             const requestBody = {
                 id: channelId, // Unique identifier for this channel
                 type: 'web_hook',
@@ -103,11 +143,11 @@ const Home = () => {
             });
 
             if (!response.ok) {
-                // console.error('Failed to register webhook:', await response.text());
+                console.error('Failed to register webhook:', await response.text());
             } else {
-                // console.log(response, "response");
+
                 setResourceId(response?.resourceId);
-                // console.log('Webhook registered successfully');
+                console.log('Webhook registered successfully');
             }
         }
 
@@ -181,7 +221,7 @@ const Home = () => {
     };
 
     const handleInserts = async (payload: any) => {
-        console.log("new changes arrived");
+        console.log("New drive changes arrived", payload);
         if (payload.new) {
             const { data: { session } } = await supabase.auth.getSession();
             const accessToken: any = session?.provider_token;
@@ -247,18 +287,12 @@ const Home = () => {
         .then(response => response.json())
         .then(async (updatedFile: any) => {
             // Update your local state or database with the new file details
-            // console.log('Updated file details:', updatedFile);
-            console.log(updatedFile, 'updatedFile');
-
             let currentFolderId = localStorage.getItem('currentFolderId');
             let isRootFolder: boolean = false;
             if (currentFolderId === 'root' || !currentFolderId) {
                 isRootFolder = true;
                 currentFolderId = await fetchRootFolderId(accessToken);
             }
-
-
-            console.log(currentFolderId, updatedFile.parents);
 
             if (updatedFile.parents && updatedFile.parents.includes(currentFolderId)) {
                 setFiles(prevFiles => {
@@ -288,138 +322,8 @@ const Home = () => {
     };
     
     const updateStartPageToken = (newToken: string) => {
-        // Update the stored startPageToken with the newToken
         localStorage.setItem('startPageToken', newToken);
     };
-
-    // const handleInserts = async (payload: any, path: PathElement[]) => {
-    //     console.log('Change received!', payload.new.channel_id, payload);
-    //     // let currentChannelId = localStorage.getItem('channelId');
-    //     // if (payload.new.channel_id == currentChannelId) {
-    //     //     console.log('Channel ID matches. Processing the payload.');
-
-    //     // } else {
-    //     //     console.log('Channel ID does not match. Ignoring the payload.');
-    //     //     return;
-    //     // }
-    //     if (payload.new) {
-    //         // const pageToken = payload.new.resource_id; // Assuming resource_id is used as pageToken
-    //         const { data: { session } } = await supabase.auth.getSession();
-    //         const accessToken = session?.provider_token; // Dynamically fetch from Supabase auth session
-    //         // const url = `https://www.googleapis.com/drive/v3/changes?alt=json&pageToken=${pageToken}`;
-    //         const headers = {
-    //             'Authorization': `Bearer ${accessToken}`,
-    //             'Accept': 'application/json',
-    //         };
-
-    //         fetch(payload.new.resource_uri, { headers })
-    //             .then(response => {
-    //                 if (response.ok) {
-    //                     return response.json();
-    //                 } else {
-    //                     console.error(`Error fetching changes: ${response.status}, ${response.statusText}`);
-    //                     return null;
-    //                 }
-    //             })
-    //             .then(async (data: any) => {
-    //                 console.log(data, "new changes");
-
-    //                 console.log(path, "path in handleinserts");
-    //                 let currentFolderId = path.length == 0 ? await fetchRootFolderId(accessToken) : path[path.length - 1].id;
-    //                 console.log(path, "currentPath", currentFolderId, "currentFolderId");
-
-    //                 if (!data.changes && data.changes.length ==  0) {
-    //                     return;
-    //                 }
-
-    //                 const changedFiles = data.changes.filter((change: any) => 
-    //                     change.file && change.file.id
-    //                 );
-    //                 const removedFiles = data.changes.filter((change: any) => 
-    //                     change.removed && change.file
-    //                 );
-
-    //                 console.log(changedFiles, removedFiles);
-    //                 // Handle updated or added files
-    //                 if (changedFiles.length > 0) {
-    //                     changedFiles.forEach((change: any) => {
-    //                         const fileId = change.file.id;
-    //                         const url = new URL(`https://www.googleapis.com/drive/v3/files/${fileId}`);
-    //                         url.searchParams.append('fields', 'id, name, size, modifiedTime, mimeType, parents');
-                    
-    //                         fetch(url.toString(), {
-    //                             headers: new Headers({
-    //                                 'Authorization': `Bearer ${accessToken}`
-    //                             })
-    //                         })
-    //                         .then(response => response.json())
-    //                         .then(updatedFile => {
-    //                             console.log(updatedFile, 'updatedFile');
-    //                             console.log(currentFolderId, updatedFile.parents);
-
-    //                             if (updatedFile.parents && updatedFile.parents.includes(currentFolderId)) {
-    //                                 setFiles(prevFiles => {
-    //                                     const fileIndex = prevFiles.findIndex(file => file.id === updatedFile.id);
-    //                                     if (fileIndex !== -1) {
-    //                                         // Update existing file
-    //                                         return prevFiles.map(file => file.id === updatedFile.id ? { ...file, ...updatedFile } : file);
-    //                                     } else {
-    //                                         // Add new file
-    //                                         return [...prevFiles, updatedFile];
-    //                                     }
-    //                                 });
-    //                             } else {
-    //                                 console.log("Updated file is not in the current folder view.");
-    //                             }
-    //                         })
-    //                         .catch(error => console.error('Error updating file info:', error));
-    //                     });
-    //                 }
-
-    //                                         // Handle removed files
-    //                     if (removedFiles.length > 0) {
-    //                         setFiles(prevFiles => {
-    //                             return prevFiles.filter(file => !removedFiles.some((removedFile: any) => removedFile.file && removedFile.file.id === file.id));
-    //                         });
-    //                     }
-    //                 // Update the index for processed changes
-    //                 setChangesProcessedIndex(data.changes.length);
-
-    //                 // if (data) {
-    //                 //     const newStartPageToken = data.newStartPageToken;
-    //             })
-    //             .catch(error => {
-    //                 console.error('Error in fetching changes:', error);
-    //             });
-    //     }
-    // }
-
-    useEffect(() => {
-        // This effect could be used to handle changes that need to be made when the path changes,
-        // such as fetching new files or updating UI elements.
-        localStorage.setItem('currentFolderId', currentPath[currentPath.length - 1]?.id || 'root');
-
-        currentPathRef.current = currentPath;
-        fetchFiles(currentPath[currentPath.length - 1]?.id || 'root');
-    }, [currentPath]); 
-
-    useEffect(() => {
-        localStorage.setItem('currentFolderId', 'root');
-        fetchFiles();
-        registerDriveWebhookAPI();
-        createSocketForDriveWebhookChangesFromDB(handleInserts);
-
-        return () => {
-            localStorage.setItem('startPageToken', '');
-            // unsubscribe(); // Assuming createSocketForDriveWebhookChangesFromDB returns a function to terminate the connection
-            // This function is called on component unmount
-            if (channelId && resourceId) {
-                localStorage.setItem('channelId', '');
-                localStorage.setItem('resourceId', '');
-                stopWebhookChannel(channelId, resourceId);
-            }
-        };
-    }, []);
 
     const stopWebhookChannel = async (channelId: string, resourceId: string) => {
         const { data: { session } } = await supabase.auth.getSession();
@@ -457,9 +361,7 @@ const Home = () => {
     }
 
     const handleFolderClick = async (file: GoogleDriveFile) => {
-        // console.log(file);
         setCurrentPath([...currentPath, { name: file.name, id: file.id }]);
-        // await fetchFiles(file.id);
     };
 
     const handleFileSelect = (file: GoogleDriveFile) => {
@@ -472,40 +374,104 @@ const Home = () => {
     };
 
     const handleUpload = async () => {
-        console.log('Selected files for upload:', selectedFiles);
-
-
+        const uploadStatuses = selectedFiles.reduce((acc, selectedFile) => ({
+            ...acc,
+            [selectedFile.id]: { name: selectedFile.name, status: 'uploading', type: selectedFile.mimeType }
+        }), {});
+        setUploadStatuses(uploadStatuses);
+        // Map each file to a promise that handles the upload process
+        const uploadPromises = selectedFiles.map(async (selectedFile: any) => {
+            return callProcessFileAPI(selectedFile)
+                .then((uploadResponse: any) => {
+                    console.log('File processed:', uploadResponse);
+                    setUploadStatuses(prevStatuses => ({
+                        ...prevStatuses,
+                        [selectedFile.id]: { name: selectedFile.name, status: 'success', type: selectedFile.mimeType }
+                    }));
+                })
+                .catch((error: any) => {
+                    console.error('Error processing file:', error);
+                    setUploadStatuses(prevStatuses => ({
+                        ...prevStatuses,
+                        [selectedFile.id]: { name: selectedFile.name, status: 'error', type: selectedFile.mimeType }
+                    }));
+                });
+        });
+        // Wait for all file uploads to complete
+        await Promise.all(uploadPromises);
+        setSelectedFiles([]);
+        setSelectMode(false);
     };
 
     const handlePathClick = async (index: number) => {
-        // console.log(index);
         if (index === -1) {
             setCurrentPath([]);
-            // await fetchFiles('root');
         } else {
             const newPath = currentPath.slice(0, index + 1);
             setCurrentPath(newPath);
-            // const folderId = newPath[newPath.length - 1].id;
-            // await fetchFiles(folderId);
         }
     };
 
-    useEffect(() => {
-        if (!selectMode && selectedFiles.length > 0) {
-            setSelectedFiles([]);
-        }
-    }, [selectMode])
+    const UploadStatusModal = () => {
+        const { isOpen, onToggle } = useDisclosure({ defaultIsOpen: true });
 
+        return (
+            <Box position="fixed" bottom="0" right="0" m={4} boxShadow="md" borderRadius="lg" width="450px" zIndex={1000} background="grey.100">
+                <Flex justify="space-between" align="center" background="blue.100" p={2} pl={7} borderTopRadius="lg">
+                    <Text fontSize="md" fontWeight="bold">Upload Status</Text>
+                    <Flex gap={2}>
+                        <IconButton icon={<Icon as={isOpen? MdKeyboardArrowDown : MdKeyboardArrowUp} />} aria-label="Collapse" onClick={onToggle} />
+                        <IconButton icon={<Icon as={MdClose} />} aria-label="Close" onClick={() => setUploadStatuses({})} />
+                    </Flex>
+                </Flex>
+                <Collapse in={isOpen}>
+                    <Flex background="gray.50" direction={'column'} p={4}>
+                        {Object.values(uploadStatuses).every(status => status.status === 'success') && (
+                            <Text pb={2} fontSize={'sm'}>Alright, I've completed processing your files. All the files have been processed successfully. Here's what I found:</Text>
+                        )}
+                        <Table variant="simple" fontSize='sm' size='md' p={4} boxShadow="sm" borderRadius="lg" background="white" w="100%">
+                            <Tbody>
+                                {Object.keys(uploadStatuses)?.map((fileId: any) => (
+                                    <Tr key={fileId}>
+                                        <Td>
+                                            <Flex gap={2}>
+                                                {<Icon as={uploadStatuses[fileId].type === 'application/vnd.google-apps.folder' ? MdOutlineFolder : MdOutlineInsertDriveFile} 
+                                                color={uploadStatuses[fileId].type == 'application/vnd.google-apps.folder' ? 'blue.500' : 'green.500'} boxSize={5}/>} {uploadStatuses[fileId].name}
+                                            </Flex>
+                                        </Td>
+                                        <Td textAlign="right">
+                                            <Box as="span" display="inline-flex" alignItems="center" justifyContent="center" borderRadius="full" w={6} h={6} bg={uploadStatuses[fileId].status === 'success' ? 'green.500' : uploadStatuses[fileId].status === 'error' ? 'red.500' : 'blue.100'}>
+                                                <Icon as={uploadStatuses[fileId].status === 'uploading' ? Spinner : uploadStatuses[fileId].status === 'success' ? MdCheck : MdError} 
+                                                    color="white" />
+                                            </Box>
+                                        </Td>
+                                    </Tr>
+                                ))}
+                            </Tbody>
+                        </Table>
+                    </Flex>
+                </Collapse>
+            </Box>
+        );
+    };
 
     return (
         <Box bg="gray.50" height="100vh" >
+            {Object.keys(uploadStatuses).length > 0 && <UploadStatusModal />}
             <Flex as="nav" justify="space-between" p={4} bg="blue.50" color="white" align='center'>
                 <Text fontSize="lg" fontWeight="bold" color="blue.500">File Picker and Reader</Text>
                 <Menu>
                     <MenuButton as={Button} color={'blue.100'}>
                         <Flex align="center" gap={2}>
                             <Box boxSize="30px">
-                                <Image src={profilePic} alt="Profile" borderRadius="full" />
+                            <Image 
+                                src={profilePic} 
+                                alt="Profile" 
+                                borderRadius="full" 
+                                onError={(e) => {
+                                    e.currentTarget.src = '';
+                                }}
+                            />
                             </Box>
                             <Text color="black">{name}</Text>
                         </Flex>
@@ -568,11 +534,12 @@ const Home = () => {
                             <Tr key={index} onClick={() => selectMode? handleFileSelect(file): handleEntryClick(file)} bg={selectedFiles.some(selectedFile => selectedFile.id === file?.id) ? "blue.100" : "white"} _hover={{ bg: "blue.50" }} style={{ cursor: 'pointer' }}>
                                 <Td>
                                     <Flex alignItems={'center'} gap={3}>
-                                        {<Icon as={file?.mimeType === 'application/vnd.google-apps.folder' ? MdOutlineFolder : MdOutlineInsertDriveFile} />} {file?.name}
+                                        {<Icon as={file?.mimeType === 'application/vnd.google-apps.folder' ? MdOutlineFolder : MdOutlineInsertDriveFile} 
+                                            color={file?.mimeType == 'application/vnd.google-apps.folder' ? 'blue.500' : 'green.500'} boxSize={5}/>} {file?.name}
                                         {selectedFiles.some(selectedFile => selectedFile.id === file.id) && <Icon as={MdCheck} color="blue.500" />}
                                     </Flex>
                                 </Td>
-                                <Td>{file.size ? (Number(file.size) > 1e9 ? (Number(file.size) / 1e9).toFixed(2) + ' GB' : Number(file.size) > 1e6 ? (Number(file.size) / 1e6).toFixed(2) + ' MB' : (Number(file.size) / 1e3).toFixed(2) + ' KB') : ''}</Td>
+                                <Td>{file?.size ? (Number(file.size) > 1e9 ? (Number(file.size) / 1e9).toFixed(2) + ' GB' : Number(file.size) > 1e6 ? (Number(file.size) / 1e6).toFixed(2) + ' MB' : (Number(file.size) / 1e3).toFixed(2) + ' KB') : ''}</Td>
                                 <Td>{new Date(file?.modifiedTime).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true })}</Td>
                             </Tr>
                         ))}

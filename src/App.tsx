@@ -7,8 +7,6 @@ import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from './utils/supabase_client';
 import Home from './Home';
 
-// const supabase = createClient('https://<project>.supabase.co', '<your-anon-key>')
-
 function App() {
   const [session, setSession] = useState<any>(null);
 
@@ -39,7 +37,6 @@ function App() {
               google: 'https://www.googleapis.com/auth/drive',
             }}
             onlyThirdPartyProviders={true}
-            // scopes={['https://www.googleapis.com/auth/drive']}
             />
         </Box>
     </Flex>
