@@ -3,7 +3,6 @@ import superagent from 'superagent';
 import { supabase } from './supabase_client';
 
 export async function callProcessFileAPI(fileMetadata: any) {
-    console.log(fileMetadata);
     const { data: { session } } = await supabase.auth.getSession();
     const provider_token = session?.provider_token;
     try {

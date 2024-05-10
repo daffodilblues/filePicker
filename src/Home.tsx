@@ -145,7 +145,6 @@ const Home = () => {
             if (!response.ok) {
                 console.error('Failed to register webhook:', await response.text());
             } else {
-
                 setResourceId(response?.resourceId);
                 console.log('Webhook registered successfully');
             }
@@ -221,7 +220,7 @@ const Home = () => {
     };
 
     const handleInserts = async (payload: any) => {
-        console.log("New drive changes arrived", payload);
+        // console.log("New drive changes arrived", payload);
         if (payload.new) {
             const { data: { session } } = await supabase.auth.getSession();
             const accessToken: any = session?.provider_token;
@@ -232,22 +231,18 @@ const Home = () => {
     
             // Retrieve the startPageToken from localStorage or use the default one from the payload
             const startPageToken: any = localStorage.getItem('startPageToken');
-            console.log(payload.new.resource_uri);
             let resource_uri = payload.new.resource_uri;
 
             if (startPageToken) {
-                console.log(startPageToken, "startPageToken available");
-                // Construct the URL for fetching changes
                 resource_uri = `https://www.googleapis.com/drive/v3/changes?alt=json&pageToken=${startPageToken}`;
             }
-            console.log(resource_uri);
             // url.searchParams.append('fields', 'nextPageToken, newStartPageToken, changes(file(id, name, mimeType, parents))');
 
             // Fetch changes using the resource URI provided in the webhook payload
             fetch(resource_uri, { headers })
                 .then(response => response.json())
                 .then(async (data: any) => {
-                    console.log('changes data', data);
+                    // console.log('changes data', data);
                     if (data.changes && data.changes.length > 0) {
                         // Process changes
                         processChanges(data.changes, accessToken);
@@ -265,7 +260,6 @@ const Home = () => {
         console.log("changes to be processed", changes);
         changes.forEach(change => {
             if (change.removed) {
-                console.log(change, "removed file");
                 setFiles(prevFiles => {
                     return prevFiles.filter(file => file.id !== change.fileId);
                 });
