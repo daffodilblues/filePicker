@@ -1,5 +1,5 @@
 import './index.css'
-import { Box } from '@chakra-ui/react';
+import { Box, Flex, Text } from '@chakra-ui/react';
 import { useState, useEffect } from 'react'
 // import { createClient } from '@supabase/supabase-js'
 import { Auth } from '@supabase/auth-ui-react'
@@ -24,8 +24,11 @@ function App() {
   }, [])
 
   if (!session) {
-    return  <Box width="350px">
-      <Auth supabaseClient={supabase} 
+    return   <Flex height="100vh" width='100vw' alignItems="center" justifyContent="center" background={"blue.100"}>
+    <Flex width='400px' gap={4} background={"white"} borderRadius='md' boxShadow='0 0 10px rgba(0, 0, 0, 0.5)' p={4} flexDirection="column" alignItems='center' justifyContent='center'>
+      <Text fontSize='xl' as='b' color={"black"} textAlign='center'>Sign into File Picker and Reader</Text>
+      <Box width="350px">
+        <Auth supabaseClient={supabase} 
             appearance={{ theme: ThemeSupa }}
             providers={['google']}
             redirectTo={`${window.location.origin}`}
@@ -35,9 +38,12 @@ function App() {
             providerScopes={{
               google: 'https://www.googleapis.com/auth/drive',
             }}
+            onlyThirdPartyProviders={true}
             // scopes={['https://www.googleapis.com/auth/drive']}
             />
-    </Box>
+        </Box>
+    </Flex>
+  </Flex>
   }
   else {
     return (<Home />)
