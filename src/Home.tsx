@@ -8,7 +8,7 @@ import { Box,
     useDisclosure,
     IconButton,
     Collapse } from '@chakra-ui/react';
-import { supabase, storeTokens, createSocketForDriveWebhookChangesFromDB } from './utils/supabase_client';
+import { supabase, createSocketForDriveWebhookChangesFromDB } from './utils/supabase_client';
 import { v4 as uuidv4 } from 'uuid';
 import { MdOutlineFolder, MdLogout, MdOutlineInsertDriveFile, MdChevronRight, MdCheck, MdError, MdClose, MdKeyboardArrowUp, MdKeyboardArrowDown } from 'react-icons/md';
 import { FcGoogle } from 'react-icons/fc';
@@ -55,6 +55,7 @@ const Home = () => {
     
     useEffect(() => {
         localStorage.setItem('currentFolderId', 'root');
+        localStorage.setItem('startPageToken', '');
         fetchFiles();
         registerDriveWebhookAPI();
         createSocketForDriveWebhookChangesFromDB(handleInserts);
