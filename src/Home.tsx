@@ -221,7 +221,7 @@ const Home = () => {
     };
 
     const handleInserts = async (payload: any) => {
-        // console.log("New drive changes arrived", payload);
+        console.log("New drive changes arrived", payload);
         if (payload.new) {
             const { data: { session } } = await supabase.auth.getSession();
             const accessToken: any = session?.provider_token;
